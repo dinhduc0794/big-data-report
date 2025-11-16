@@ -1,0 +1,41 @@
+# Ignore LaTeX intermediate files
+*.aux
+*.bbl
+*.blg
+*.brf
+*.fdb_latexmk
+*.fls
+*.log
+*.lof
+*.lot
+*.out
+*.toc
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+
+# Ignore any backup files
+*~
+*.bak
+
+# Ignore build directory if using one
+build/
+output/
+
+# Allow keeping specific PDF files (uncomment if you want to keep them)
+main.pdf
+
+# Ignore TeX-specific editor files
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.ist
+*.xdy
+
+# VSCode settings
+.vscode/
+
