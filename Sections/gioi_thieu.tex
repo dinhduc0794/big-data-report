@@ -1,0 +1,38 @@
+\section{Giới thiệu}
+\label{chap:gioi_thieu}
+
+\subsection{Đặt vấn đề}
+Ngày nay, chúng ta đang sống trong thời đại bùng nổ thông tin. Lượng dữ liệu được tạo ra mỗi ngày là vô cùng lớn, đặc biệt là trên các nền tảng trực tuyến. Trong lĩnh vực xuất bản và thương mại điện tử sách, hàng trăm nghìn đầu sách mới được phát hành mỗi năm, khiến người đọc rơi vào "ma trận quá tải thông tin" (information overload). Việc tìm kiếm được một cuốn sách phù hợp với sở thích cá nhân trở nên khó khăn hơn bao giờ hết.
+
+Các hệ thống gợi ý (Recommender Systems) ra đời để giải quyết chính bài toán này. Chúng giúp cá nhân hóa trải nghiệm người dùng, tăng khả năng khám phá sản phẩm, và cuối cùng là thúc đẩy doanh số cho doanh nghiệp. Tuy nhiên, để xây dựng một hệ thống gợi ý hiệu quả cho hàng triệu người dùng và hàng triệu cuốn sách, chúng ta vấp phải các thách thức của Big Data (Dữ liệu lớn), đặc biệt là về Volume (Khối lượng dữ liệu rating) và Variety (Đa dạng về hành vi người dùng). Các công cụ xử lý truyền thống không thể đáp ứng được.
+
+\subsection{Mục tiêu đề tài}
+Đề tài "Book Recommendation with Hadoop" được thực hiện với các mục tiêu chính sau:
+\begin{itemize}
+    \item Tìm hiểu và vận dụng kiến trúc Big Data, cụ thể là hệ sinh thái Hadoop, để xử lý một tập dữ liệu lớn.
+    \item Triển khai các thuật toán gợi ý cơ bản trên nền tảng Hadoop, bao gồm:
+        \begin{itemize}
+            \item \textbf{Lọc Cộng tác (Collaborative Filtering)}: Sử dụng Apache Pig để xây dựng mô hình Item-Item.
+            \item \textbf{Lọc dựa trên Nội dung (Content-Based Filtering)}: Sử dụng Apache Pig để xây dựng hồ sơ người dùng (User Profile) dựa trên các đặc tính của sách (ví dụ: tác giả).
+            \item \textbf{Lọc Lai (Hybrid Filtering)}: Kết hợp hai phương pháp trên để cải thiện độ chính xác.
+        \end{itemize}
+    \item Sử dụng mô hình MapReduce (với Python Streaming) để thực hiện tiền xử lý dữ liệu, biến đổi ma trận thưa (sparse matrix) thành ma trận đặc (dense matrix) cho mục đích demo.
+    \item Xây dựng một lớp truy vấn (Query Layer) bằng Apache Hive, cho phép người dùng cuối hoặc ứng dụng BI dễ dàng truy xuất kết quả gợi ý bằng ngôn ngữ SQL.
+\end{itemize}
+
+\subsection{Đối tượng và phạm vi nghiên cứu}
+\begin{itemize}
+    \item \textbf{Đối tượng:} Các thuật toán Hệ thống Gợi ý và các công cụ trong hệ sinh thái Hadoop (HDFS, MapReduce, Pig, Hive).
+    \item \textbf{Phạm vi:} Đề tài sử dụng bộ dữ liệu Book-Crossing \cite{dataset} (đã được rút gọn cho mục đích demo) bao gồm 3 file: \texttt{books.csv}, \texttt{ratings.csv}, và \texttt{users.csv}. Hệ thống được triển khai trên một cụm Hadoop (single-node hoặc multi-node).
+\end{itemize}
+
+\subsection{Bố cục báo cáo}
+Nội dung báo cáo được chia thành 6 phần (section):
+\begin{itemize}
+    \item \textbf{Phần 1 - Giới thiệu:} Trình bày tổng quan về đề tài, mục tiêu và phạm vi.
+    \item \textbf{Phần 2 - Cơ sở lý thuyết:} Trình bày các kiến thức nền tảng về Big Data, Hadoop, HDFS, MapReduce, Pig, Hive và các phương pháp Hệ thống Gợi ý.
+    \item \textbf{Phần 3 - Phân tích và Thiết kế:} Mô tả chi tiết về bộ dữ liệu, các bước tiền xử lý, và kiến trúc luồng dữ liệu tổng thể của hệ thống.
+    \item \textbf{Phần 4 - Cài đặt và Thực thi:} Trình bày chi tiết code và các lệnh thực thi cho từng bước: Tiền xử lý MapReduce, các script Pig và các script Hive.
+    \item \textbf{Phần 5 - Kết quả và Đánh giá:} Trình bày kết quả gợi ý thu được và đánh giá các phương pháp.
+    \item \textbf{Phần 6 - Kết luận:} Tổng kết các kết quả đạt được, nêu hạn chế và đề xuất hướng phát triển tương lai.
+\end{itemize}

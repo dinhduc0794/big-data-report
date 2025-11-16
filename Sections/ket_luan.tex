@@ -1,0 +1,26 @@
+\section{Kết luận}
+\label{chap:ket_luan}
+
+\subsection{Kết luận}
+Qua quá trình thực hiện đề tài "Book Recommendation with Hadoop", nhóm đã đạt được các mục tiêu đề ra:
+\begin{itemize}
+    \item Đã cài đặt và vận hành thành công một quy trình phân tích Big Data hoàn chỉnh trên hệ sinh thái Hadoop, mô phỏng theo project mẫu.
+    \item Đã triển khai được 3 thuật toán gợi ý (Collaborative, Content-Based, Hybrid) bằng ngôn ngữ Apache Pig.
+    \item Đã hiểu rõ và vận dụng được mô hình MapReduce (thông qua Python Streaming) để thực hiện tiền xử lý dữ liệu, cụ thể là biến đổi ma trận thưa thành ma trận đặc.
+    \item Đã xây dựng được một lớp truy vấn dữ liệu (Data Mart) bằng Apache Hive, cho phép truy vấn kết quả gợi ý một cách thân thiện qua SQL.
+\end{itemize}
+Đề tài đã chứng minh được khả năng của Hadoop trong việc giải quyết các bài toán phân tích dữ liệu lớn và phức tạp như Hệ thống Gợi ý.
+
+\subsection{Hạn chế của đề tài}
+\begin{itemize}
+    \item \textbf{Dataset:} Bộ dữ liệu demo nhỏ, chưa thể hiện được sức mạnh thực sự (về tốc độ và khả năng mở rộng) của Hadoop.
+    \item \textbf{Logic Tiền xử lý:} Bước tạo ma trận đặc (dense matrix) bằng MapReduce chỉ mang tính demo, không có khả năng mở rộng cho bộ dữ liệu gốc (full dataset).
+    \item \textbf{Content-Based:} Thuật toán lọc nội dung (dựa trên Tác giả) còn đơn giản. Một mô hình tốt hơn cần kết hợp nhiều đặc trưng (Publisher, Year) hoặc dùng NLP (Xử lý Ngôn ngữ Tự nhiên) để phân tích tiêu đề/mô tả sách.
+\end{itemize}
+
+\subsection{Hướng phát triển}
+\begin{itemize}
+    \item \textbf{Sử dụng Apache Spark:} Nâng cấp các script Pig sang Spark (PySpark hoặc Scala). Spark xử lý dữ liệu trên RAM (in-memory) sẽ cho hiệu năng nhanh hơn nhiều so với MapReduce (ghi/đọc ổ cứng liên tục).
+    \item \textbf{Sử dụng MLlib:} Triển khai các thuật toán gợi ý mạnh mẽ hơn có sẵn trong thư viện Machine Learning của Spark, ví dụ như ALS (Alternating Least Squares), là thuật toán chuẩn công nghiệp cho Lọc Cộng tác.
+    \item \textbf{Xây dựng ứng dụng Web:} Xây dựng một ứng dụng web (dùng Spring Boot/React/Node.js) kết nối với Hive (qua JDBC) để tạo ra một hệ thống gợi ý sách "live" cho người dùng cuối.
+\end{itemize}

@@ -1,0 +1,176 @@
+\section{Map reduce}
+\subsection{Cơ sở lý thuyết}
+
+\subsubsection{Tổng quan về MapReduce}
+
+MapReduce là một kiến trúc và mô hình lập trình được thiết kế để xử lý và tạo ra các bộ dữ liệu lớn song song trên các cụm máy tính (cluster). Nó giải quyết ba thách thức chính của tính toán cụm I/O:
+
+\begin{enumerate}
+    \item \textbf{Lỗi nút (Nodes fail):} Được giải quyết bằng cách sử dụng hệ thống tệp phân tán (Distributed FS) để sao chép dữ liệu.
+    \item \textbf{Mạng là nút thắt cổ chai (Network is a bottleneck):} Được giải quyết bằng nguyên tắc "mang tính toán đến nút" (thay vì mang dữ liệu đến nút), thể hiện qua các bước Sắp xếp và Xáo trộn (Sort and Shuffle).
+    \item \textbf{Lập trình phân tán phức tạp:} Được giải quyết bằng cách đơn giản hóa mô hình lập trình; lập trình viên chỉ cần "định nghĩa một hàm map và một hàm reduce".
+\end{enumerate}
+
+MapReduce có thể được định nghĩa theo hai cách:
+\begin{itemize}
+    \item \textbf{Một kiểu lập trình (noun.1):} Một phong cách lập trình xử lý dữ liệu theo luồng: \texttt{input chunks => map tasks | group\_by keys | reduce tasks => output}. Dấu \texttt{|} là biểu tượng "pipe" của Linux, chuyển đầu ra chuẩn (stdout) của tiến trình trước sang đầu vào chuẩn (stdin) của tiến trình tiếp theo.
+    \item \textbf{Một hệ thống (noun.2):} Một hệ thống phân phối các chương trình kiểu MapReduce trên một hệ thống tệp phân tán, ví dụ như \texttt{apache.hadoop.mapreduce} với HDFS.
+\end{itemize}
+
+\subsubsection{Mô hình lập trình MapReduce}
+
+Quá trình MapReduce được chia thành ba bước chính. Lập trình viên chỉ cần viết mã cho bước 1 (Map) và bước 3 (Reduce), trong khi hệ thống sẽ tự động xử lý bước 2 (Sort/Group by).
+
+\textbf{Giai đoạn Map (Ánh xạ)}
+\begin{itemize}
+    \item \textbf{Mục đích:} "Trích xuất những gì bạn quan tâm" (extract what you care about) từ dữ liệu đầu vào.
+    \item \textbf{Đầu vào:} Các cặp (key, value) ban đầu, thường là (vị trí file, nội dung dòng).
+    \item \textbf{Quá trình:} Hàm Map do lập trình viên viết sẽ xử lý mỗi cặp (k, v) đầu vào và tạo ra một danh sách các cặp (key', value') trung gian.
+    \item \textbf{Đầu ra:} Một tập hợp các cặp (key, value) trung gian.
+\end{itemize}
+
+\textbf{Giai đoạn Sort/Group by (Sắp xếp/Gom nhóm)}
+\begin{itemize}
+    \item \textbf{Mục đích:} Thu thập tất cả các giá trị (value) có cùng một khóa (key) lại với nhau.
+    \item \textbf{Quá trình:} Giai đoạn này, còn được gọi là "sort and shuffle" (sắp xếp và xáo trộn), được hệ thống tự động thực hiện. Hệ thống sẽ:
+    \begin{enumerate}
+        \item \textbf{Sắp xếp (Sort):} Sắp xếp các cặp (key', value') trung gian theo khóa (key').
+        \item \textbf{Gom nhóm (Group):} Tập hợp tất cả các giá trị (value') có cùng khóa (key') thành một danh sách.
+    \end{enumerate}
+    \item \textbf{Đầu ra:} Các cặp (key', [danh sách các value']). Ví dụ: \texttt{(k, [v1, v2, ...])}.
+\end{itemize}
+
+\textbf{Giai đoạn Reduce (Tổng hợp)}
+\begin{itemize}
+    \item \textbf{Mục đích:} "Tổng hợp, tóm tắt" (aggregate, summarize) dữ liệu đã được gom nhóm.
+    \item \textbf{Đầu vào:} Các cặp (key', [danh sách các value']) từ giai đoạn Group by.
+    \item \textbf{Quá trình:} Hàm Reduce do lập trình viên viết sẽ xử lý từng nhóm, thực hiện các phép tính (như đếm, tính tổng, trung bình) trên danh sách các giá trị (value') để tạo ra một giá trị tóm tắt.
+    \item \textbf{Đầu ra:} Một tập hợp các cặp (key', value'') cuối cùng, là kết quả của bài toán.
+\end{itemize}
+
+\subsection{Ứng dụng MapReduce trên dữ liệu Book-Crossing}
+
+\subsection{Tổng quan}
+
+Trong ví dụ này, mục tiêu là xây dựng **ma trận người dùng - sách** (user-book matrix) từ dữ liệu Book-Crossing, tương tự cách xử lý MovieLens. Mỗi user sẽ có các giá trị rating cho tất cả sách, rating chưa có sẽ được gán 0.
+
+\subsection{Step 1: Chuẩn bị danh sách BookID}
+
+Reducer cần biết toàn bộ BookID để đánh dấu các sách chưa được đánh giá.  
+
+\textbf{Mapper: \texttt{book\_list\_mapper.py}}
+\begin{lstlisting}[language=Python, caption=Illustrative Python source code for the Association rule]
+#!/usr/bin/python3
+import sys
+
+for line in sys.stdin:
+    parts = line.strip().split(";")
+    if parts[0] == "ISBN":
+        continue
+    print(parts[0])
+\end{lstlisting}
+
+\textbf{Chạy MapReduce nhỏ để tạo danh sách BookID:}
+\begin{verbatim}
+hadoop jar <path_to_streaming> \
+  -input /book_dataset/books.csv \
+  -output /book_dataset/book_ids \
+  -mapper book_list_mapper.py \
+  -reducer /bin/sort \
+  -file book_list_mapper.py
+\end{verbatim}
+
+\textbf{Tạo file \texttt{book\_ids.txt} và upload lại:}
+\begin{verbatim}
+hadoop fs -get /book_dataset/book_ids/part-00000 book_ids.txt
+hadoop fs -put book_ids.txt /book_dataset/book_ids.txt
+\end{verbatim}
+
+\subsection{Step 2: MapReduce chính}
+
+\textbf{Mapper: \texttt{rating\_mapper.py}}  
+
+Mục tiêu: chuyển dữ liệu rating về dạng chuẩn:  
+\texttt{userId <tab> bookId <tab> rating}
+
+\begin{verbatim}
+#!/usr/bin/python3
+import sys
+
+for line in sys.stdin:
+    parts = line.strip().split(";")
+    if parts[0] == "User-ID":
+        continue
+
+    uid = parts[0]
+    bookId = parts[1]
+    rating = parts[2]
+
+    print(f"{uid}\t{bookId}\t{rating}")
+\end{verbatim}
+
+\textbf{Reducer: \texttt{rating\_reducer.py}}  
+
+Mục tiêu: Gom theo user, đánh dấu sách đã rate, xuất các sách chưa rate với rating = 0.
+
+\begin{verbatim}
+#!/usr/bin/python3
+import sys
+
+# Load full book list
+book_list = []
+with open("book_ids.txt") as f:
+    for line in f:
+        book_list.append(line.strip())
+
+prev_uid = None
+rated = {}
+
+for line in sys.stdin:
+    parts = line.strip().split("\t")
+    uid = parts[0]
+    bookId = parts[1]
+    rating = parts[2]
+
+    if prev_uid is None:
+        prev_uid = uid
+
+    if uid == prev_uid:
+        rated[bookId] = rating
+        print(f"{uid}\t{bookId}\t{rating}")  # rated item
+    else:
+        # emit unrated books
+        for b in book_list:
+            if b not in rated:
+                print(f"{prev_uid}\t{b}\t0")
+
+        rated = {bookId: rating}
+        print(f"{uid}\t{bookId}\t{rating}")
+        prev_uid = uid
+
+# final user
+for b in book_list:
+    if b not in rated:
+        print(f"{prev_uid}\t{b}\t0")
+\end{verbatim}
+
+\subsection{Step 3: Chạy MapReduce}
+
+\begin{verbatim}
+hadoop jar <path_to_streaming> \
+  -files rating_mapper.py,rating_reducer.py,book_ids.txt \
+  -mapper rating_mapper.py \
+  -reducer rating_reducer.py \
+  -input /book_dataset/rating.csv \
+  -output /book_dataset/user_book_matrix
+\end{verbatim}
+
+\subsection{Kết quả và lưu ý}
+
+\begin{itemize}
+    \item Output là ma trận người dùng - sách, mỗi user có rating cho tất cả sách.
+    \item Sách chưa được đánh giá sẽ được gán rating = 0.
+    \item Phương pháp này có thể mở rộng cho tính toán thống kê rating, lọc sách phổ biến, hoặc xây dựng hệ thống gợi ý.
+    \item MapReduce đảm bảo xử lý song song trên dữ liệu lớn, tối ưu memory và network nhờ shuffle & sort tự động.
+\end{itemize}
+

@@ -1,0 +1,70 @@
+\section{Cơ sở lý thuyết}
+\label{chap:co_so_ly_thuyet}
+
+\subsection{Tổng quan về Big Data và Hadoop}
+\textbf{Big Data (Dữ liệu lớn)} là thuật ngữ mô tả các tập dữ liệu có khối lượng (Volume), tốc độ (Velocity) và sự đa dạng (Variety) cực kỳ lớn, vượt qua khả năng xử lý của các hệ thống cơ sở dữ liệu truyền thống.
+
+\textbf{Apache Hadoop} là một framework mã nguồn mở được thiết kế để lưu trữ và xử lý các tập dữ liệu lớn một cách phân tán (distributed) trên các cụm (clusters) máy tính thông thường (commodity hardware). Hadoop giải quyết các thách thức của Big Data thông qua hai thành phần cốt lõi: HDFS và MapReduce (hoặc YARN).
+
+\textbf{HDFS (Hadoop Distributed File System)} là hệ thống tệp phân tán của Hadoop, được thiết kế để lưu trữ các file siêu lớn (hàng Terabyte).
+\begin{itemize}
+    \item \textbf{Cơ chế:} HDFS chia file lớn thành các khối (chunks/blocks) (ví dụ: 128MB) và nhân bản (replicate) mỗi khối (thường là 3 lần) ra các máy khác nhau trong cụm.
+    \item \textbf{Kiến trúc:} Gồm 1 NameNode (quản lý metadata, "chỉ đường") và nhiều DataNode (lưu trữ dữ liệu).
+    \item \textbf{Lợi ích:} Chống chịu lỗi (fault-tolerance) và cung cấp thông lượng (throughput) đọc dữ liệu cao.
+\end{itemize}
+
+\subsection{Mô hình MapReduce}
+\label{sec:mapreduce}
+MapReduce là một mô hình lập trình để xử lý dữ liệu lớn song song, phân tán. Một tác vụ MapReduce gồm 3 pha:
+\begin{enumerate}
+    \item \textbf{Pha Map (Ánh xạ):} Đọc dữ liệu đầu vào (Input Chunks), xử lý (lọc, trích xuất) và phát ra các cặp (key, value) trung gian.
+    \item \textbf{Pha Shuffle \& Sort (Xáo trộn \& Sắp xếp):} (Hệ thống tự động làm) Thu thập tất cả các 'value' có chung 'key' từ tất cả các Mapper và gom chúng lại thành một danh sách.
+    \item \textbf{Pha Reduce (Rút gọn):} Nhận vào (key, [list of values]), thực hiện một phép toán tổng hợp (như sum, average) và ghi ra kết quả cuối cùng.
+\end{enumerate}
+
+\textbf{Triết lý "Mang tính toán đến dữ liệu" (Bring computation to data):} Thay vì di chuyển hàng Petabyte dữ liệu qua mạng đến máy xử lý, MapReduce di chuyển đoạn code xử lý (vài KB) đến các DataNode (nơi dữ liệu đang nằm) để xử lý cục bộ, giúp giảm thiểu tắc nghẽn mạng.
+
+\subsection{Apache Pig}
+Apache Pig là một nền tảng bậc cao (high-level) để tạo các chương trình MapReduce.
+\begin{itemize}
+    \item \textbf{Pig Latin:} Cung cấp một ngôn ngữ luồng dữ liệu (data-flow) tên là Pig Latin.
+    \item \textbf{Cơ chế:} Trình biên dịch của Pig sẽ dịch các script Pig Latin (ngắn gọn, dễ hiểu) thành một chuỗi các tác vụ MapReduce phức tạp để chạy trên Hadoop.
+    \item \textbf{Lợi ích:} Giúp lập trình viên tập trung vào logic nghiệp vụ thay vì phải viết code MapReduce bằng Java/Python phức tạp.
+\end{itemize}
+
+\subsection{Apache Hive}
+Apache Hive là một hệ thống kho dữ liệu (Data Warehouse) được xây dựng trên Hadoop.
+\begin{itemize}
+    \item \textbf{HiveQL:} Cung cấp giao diện truy vấn bằng ngôn ngữ giống SQL (gọi là HiveQL).
+    \item \textbf{Schema-on-Read:} Đây là điểm mấu chốt. Hive không lưu trữ dữ liệu. Nó "phủ" một lớp metadata (schema) lên các file (ví dụ: file text, CSV) đã nằm sẵn trên HDFS. Khi em truy vấn, Hive mới đọc file và áp schema đó vào.
+    \item \textbf{Cơ chế:} Hive dịch câu lệnh SQL (HiveQL) thành các tác vụ MapReduce (hoặc Tez/Spark) để chạy trên Hadoop.
+    \item \textbf{Lợi ích:} Cho phép các nhà phân tích BI (quen thuộc với SQL) có thể truy vấn Big Data trên Hadoop mà không cần biết lập trình MapReduce.
+\end{itemize}
+
+\subsection{Hệ thống Gợi ý (Recommender Systems)}
+\label{sec:he_goi_y}
+Là một lớp thuật toán giúp dự đoán "rating" (đánh giá) hoặc "preference" (sở thích) mà một người dùng có thể dành cho một sản phẩm.
+
+\subsubsection{Lọc Cộng tác (Collaborative Filtering - CF)}
+\begin{itemize}
+    \item \textbf{Ý tưởng:} "Hãy gợi ý cho User A những gì mà những người giống User A (User-based) cũng thích".
+    \item \textbf{Item-Item CF:} Một biến thể phổ biến hơn: "Hãy gợi ý cho User A phim X, vì User A đã thích phim Y, và hệ thống nhận thấy (từ tất cả user khác) rằng những người thích Y cũng thích X".
+    \item \textbf{Cơ chế:} Tính toán ma trận tương đồng (similarity matrix) giữa các item (ví dụ: bằng Cosine Similarity) dựa trên rating của tất cả user.
+\end{itemize}
+
+\subsubsection{Lọc dựa trên Nội dung (Content-Based Filtering - CB)}
+\begin{itemize}
+    \item \textbf{Ý tưởng:} "Hãy gợi ý cho User A những item giống với những item mà User A đã thích trong quá khứ."
+    \item \textbf{Cơ chế:}
+        \begin{enumerate}
+            \item Xây dựng "Hồ sơ User" (User Profile) dựa trên đặc tính (content) của các item mà user đã rate (ví dụ: user này thích tác giả 'Dan Brown', thể loại 'Trinh thám').
+            \item Xây dựng "Hồ sơ Item" (Item Profile) cho các item chưa xem.
+            \item Tính toán độ tương đồng (ví dụ: Cosine) giữa User Profile và Item Profile để dự đoán rating.
+        \end{enumerate}
+\end{itemize}
+
+\subsubsection{Lọc Lai (Hybrid Filtering)}
+\begin{itemize}
+    \item \textbf{Ý tưởng:} Kết hợp điểm mạnh của CF và CB để khắc phục điểm yếu của cả hai (ví dụ: vấn đề "khởi đầu lạnh" - cold start).
+    \item \textbf{Cơ chế (Ví dụ):} Kết hợp mô hình Baseline (tính bias của user và item) với mô hình Lọc Cộng tác (CF) để ra dự đoán cuối cùng.
+\end{itemize}

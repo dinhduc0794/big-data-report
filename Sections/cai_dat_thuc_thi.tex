@@ -1,0 +1,222 @@
+\section{Cài đặt và Thực thi}
+\label{chap:cai_dat_thuc_thi}
+Chương này trình bày chi tiết luồng thực thi của hệ thống, từ bước tiền xử lý dữ liệu thô đến khi truy vấn ra kết quả gợi ý cuối cùng. Toàn bộ mã nguồn chi tiết của các script được lưu trữ tại kho lưu trữ GitHub đã đính kèm ở trang bìa.
+
+Luồng xử lý tổng quan của hệ thống được minh họa trong Hình \ref{fig:workflow_diag}.
+
+\subsection{Bước 0: Tải dữ liệu lên HDFS (Data Ingestion)}
+\label{sec:thuc_thi_ingestion}
+Bước đầu tiên của quy trình là tải các file dữ liệu thô (raw data) từ hệ thống tệp cục bộ (local filesystem) lên Hệ thống tệp phân tán Hadoop (HDFS) để các tác vụ MapReduce và Pig có thể truy cập và xử lý song song.
+
+Chúng ta tạo một thư mục chính cho project là \texttt{/book\_dataset} và tải 3 file \texttt{.csv} (đã rút gọn) vào đó.
+
+\begin{verbatim}
+# Tạo thư mục trên HDFS
+hadoop fs -mkdir /book_dataset
+
+# Tải 3 file CSV (đã rút gọn) từ local lên HDFS
+hadoop fs -put /path/to/local/books.csv /book_dataset/
+hadoop fs -put /path/to/local/ratings.csv /book_dataset/
+hadoop fs -put /path/to/local/users.csv /book_dataset/
+\end{verbatim}
+
+Sau bước này, dữ liệu thô đã sẵn sàng trên HDFS để bắt đầu Bước 1 (Tiền xử lý).
+
+\subsection{Bước 1: Ứng dụng MapReduce trên dữ liệu Book-Crossing}
+\label{sec:thuc_thi_mapreduce}
+
+\subsubsection{Tổng quan}
+Trong ví dụ này, mục tiêu là xây dựng ma trận người dùng - sách (user-book matrix) từ dữ liệu Book-Crossing. Mỗi user sẽ có các giá trị rating cho tất cả sách, rating chưa có sẽ được gán 0. Đây là bước Tiền xử lý (Preprocessing) quan trọng, biến ma trận thưa (sparse matrix) thành ma trận đặc (dense matrix) 5x5 (do dataset demo có 5 user và 5 sách), giúp đơn giản hóa các script Pig ở bước sau.
+
+\subsubsection{Bước 1 (phụ): Chuẩn bị danh sách BookID}
+\label{sec:mr_step1_bookids}
+Reducer cần biết toàn bộ BookID để đánh dấu các sách chưa được đánh giá. Chúng ta dùng một tác vụ MapReduce nhỏ để tự động trích xuất danh sách này.
+
+\subsubsection*{Mapper: \texttt{book\_list\_mapper.py}}
+\begin{itemize}
+    \item \textbf{Mục tiêu:} Đọc file \texttt{books.csv} gốc và trích xuất cột ISBN.
+    \item \textbf{Logic:} Mapper đọc từng dòng, bỏ qua header (dòng đầu tiên), trích xuất ISBN (cột đầu tiên), làm sạch (xóa dấu \texttt{"} và khoảng trắng) và in ra STDOUT.
+    \item \textbf{Reducer:} Chúng ta sử dụng Reducer có sẵn của Hadoop là \texttt{/bin/sort} để sắp xếp và loại bỏ các ISBN trùng lặp, đảm bảo danh sách BookID là duy nhất.
+\end{itemize}
+
+\subsubsection*{Chạy MapReduce nhỏ để tạo danh sách BookID:}
+\begin{verbatim}
+hadoop jar $STREAMING \
+  -input /book_dataset/books.csv \
+  -output /book_dataset/book_ids_temp \
+  -mapper book_list_mapper.py \
+  -reducer /bin/sort \
+  -file book_list_mapper.py
+\end{verbatim}
+
+\subsubsection*{Tạo file \texttt{book\_ids.txt} và tải lên lại:}
+Kết quả \texttt{part-00000} từ tác vụ trên được tải về local, đổi tên thành \texttt{book\_ids.txt} và tải ngược lên HDFS (hoặc gửi qua cờ \texttt{-files}) để Reducer chính ở bước 2 có thể truy cập.
+\begin{verbatim}
+hadoop fs -get /book_dataset/book_ids_temp/part-00000 book_ids.txt
+hadoop fs -put book_ids.txt /book_dataset/book_ids.txt
+\end{verbatim}
+
+\subsubsection{Bước 2: Chạy MapReduce (Tạo ma trận đặc)}
+\label{sec:mr_step2_matrix}
+Đây là tác vụ MapReduce chính để tạo ma trận đặc 25 dòng.
+
+\subsubsection*{Mapper: \texttt{rating\_mapper.py}}
+\begin{itemize}
+    \item \textbf{Mục tiêu:} Đọc \texttt{ratings.csv}, làm sạch và chuẩn bị dữ liệu cho pha Shuffle.
+    \item \textbf{Logic (Behind the Scene):}
+        \begin{itemize}
+            \item Đọc từng dòng từ STDIN (là file \texttt{ratings.csv}).
+            \item Bỏ qua dòng header (dòng đầu tiên) bằng biến cờ \texttt{first\_line}.
+            \item Tách dòng bằng dấu chấm phẩy (`;`), làm sạch (xóa dấu \texttt{"} và khoảng trắng) khỏi các trường \texttt{uid}, \texttt{bookId}, \texttt{rating}.
+            \item \textbf{Output (Key-Value):} Phát ra (emit) các cặp (Key, Value) với Key là \texttt{uid} và Value là \texttt{bookId \t rating}.
+            \item \textbf{Ví dụ Output:} \texttt{"276726" <tab> "0155061224"\t"5"}.
+        \end{itemize}
+    \item \textbf{Tác dụng:} Việc đặt \texttt{User-ID} làm Key đảm bảo Hadoop sẽ gom tất cả các rating của cùng một user về cho một Reducer duy nhất (theo cơ chế Shuffle và Sort).
+\end{itemize}
+
+\subsubsection*{Reducer: \texttt{rating\_reducer.py}}
+\begin{itemize}
+    \item \textbf{Mục tiêu:} Gom theo user, đánh dấu sách đã rate, xuất các sách chưa rate với rating = 0.
+    \item \textbf{Logic (Behind the Scene):}
+        \begin{itemize}
+            \item \textbf{Khởi tạo (Setup):} Reducer chạy 1 lần duy nhất, đọc file \texttt{book\_ids.txt} (đã được gửi đến node bằng cờ \texttt{-files}) và lưu 5 ISBN vào một danh sách (List) trong bộ nhớ tên là book_list.
+            \item \textbf{Vòng lặp (Reduce):} Reducer nhận (Key, [List of Values]), ví dụ: \texttt{("276727", ["\"0441...\"\t\"8\"", "\"0679...\"\t\"4""])}.
+            \item Nó lặp qua danh sách Value, in ra các rating \textbf{thật} này (ví dụ: `276727  "0441172717"  8`) và lưu các ISBN đã xem vào một dictionary \texttt{rated}.
+            \item \textbf{Logic "Group Change":} Khi Reducer phát hiện Key (\texttt{uid}) thay đổi (ví dụ: từ `276726` sang `276727`), nó biết đã xử lý xong user cũ (`prev_uid`).
+            \item \textbf{Điền 0.0 (Padding):} Nó lặp qua 5 ISBN trong `book_list`. Nếu một ISBN *không* có trong dictionary \texttt{rated} của user đó, nó sẽ in ra một dòng rating 0. Ví dụ: \texttt{276726\t"034545104X"\t0}.
+            \item Nó lặp lại quy trình này cho đến khi xử lý hết các user, bao gồm cả việc xử lý user cuối cùng (`final user`) sau khi vòng lặp kết thúc.
+        \end{itemize}
+\end{itemize}
+
+
+\subsubsection{Lệnh thực thi chính}
+Lệnh này chạy tác vụ MapReduce chính để tạo ma trận.
+\begin{verbatim}
+hadoop jar $STREAMING \
+  -files rating_mapper.py,rating_reducer.py,book_ids.txt \
+  -mapper rating_mapper.py \
+  -reducer rating_reducer.py \
+  -input /book_dataset/ratings.csv \
+  -output /book_dataset/user_book_matrix
+\end{verbatim}
+
+\subsubsection{Kết quả và lưu ý}
+\begin{itemize}
+    \item Output là ma trận người dùng - sách (\texttt{user\_book\_matrix}), mỗi user có 5 dòng (1 dòng/sách).
+    \item Sách chưa được đánh giá sẽ được gán rating = 0.
+    \item Phương pháp này (tạo ma trận đặc) chỉ phù hợp cho demo, nhưng nó cho thấy rõ cơ chế hoạt động của MapReduce.
+    \item MapReduce đảm bảo xử lý song song trên dữ liệu lớn, tối ưu memory và network nhờ shuffle và sort tự động.
+\end{itemize}
+
+---
+\subsection{Bước 2: Phân tích (Apache Pig)}
+Sau khi có ma trận đặc 25 dòng từ \texttt{user\_book\_matrix}, chúng ta sử dụng Apache Pig để chạy 3 thuật toán gợi ý. Pig sẽ dịch các script Pig Latin này thành các tác vụ MapReduce ngầm.
+
+\subsubsection{Lọc Cộng tác (Item-Item CF)}
+Script \texttt{Collaborative.pig} thực hiện thuật toán Lọc Cộng tác Item-Item, dựa trên ý tưởng "những item giống nhau thường được rate giống nhau".
+
+\textbf{Luồng thực thi Pig:}
+\begin{enumerate}
+    \item \textbf{Tải và Tách (Load \& Split):} Tải ma trận đặc 25 dòng từ \texttt{/book\_dataset/user\_book\_matrix}, sau đó tách thành 2 tập: \texttt{NonZero} (các rating thật) và \texttt{Zero} (các rating 0).
+    \item \textbf{Chuẩn hóa (Normalization):} Chuẩn hóa rating bằng cách trừ đi rating trung bình của *từng item* (Item-based normalization). Việc này giúp loại bỏ thiên kiến (bias) của các cuốn sách (ví dụ: sách nào cũng được rate cao). Kết quả được lưu trong quan hệ \texttt{CA}.
+    \item \textbf{Tính ma trận Tương đồng (Similarity Matrix):}
+        \begin{itemize}
+            \item Đây là bước "nặng" nhất. Script tự \texttt{JOIN} (phép \texttt{JOIN A by uid, B by uid}) quan hệ \texttt{CA} với chính nó. Thao tác này tạo ra tất cả các cặp sách (it1, it2) được cùng một user đánh giá (kể cả rating 0).
+            \item Nó tính toán \textbf{Độ tương đồng Cosine (Cosine Similarity)} giữa vector rating của tất cả các cặp sách, tạo ra ma trận \texttt{II(it1, it2, sim)}.
+        \end{itemize}
+    \item \textbf{Dự đoán (Prediction):}
+        \begin{itemize}
+            \item Để dự đoán điểm cho một cặp (user, item) trong tập \texttt{Zero}, script tìm các "hàng xóm" (neighbors) - là các sách `sitem` mà user *đã xem* (\texttt{NonZero}) và *giống* với `item` (từ ma trận \texttt{II}).
+            \item Nó chọn ra 10 hàng xóm giống nhất (\texttt{LIMIT 10}).
+            \item Nó tính điểm dự đoán bằng công thức \textbf{Trung bình có trọng số (Weighted Average)}: $\frac{\sum (rating_{sitem} \times sim(item, sitem))}{\sum sim(item, sitem)}$.
+        \end{itemize}
+    \item \textbf{Gợi ý và Lưu trữ (Recommend \& Store):} Script sắp xếp các điểm dự đoán (\texttt{PredictedRating}) theo thứ tự giảm dần cho mỗi user, lấy 5 sách cao nhất (\texttt{LIMIT 5}), và lưu kết quả \texttt{(uid, itemid)} vào HDFS tại \texttt{/RcomSys/CollabOut}.
+\end{enumerate}
+
+\subsubsection{Lọc dựa trên Nội dung (Author-based)}
+Do dataset sách không có thể loại (genres) như project mẫu, script \texttt{ContentBased.pig} được thiết kế lại để gợi ý dựa trên Tác giả (Author). Logic là: "Nếu bạn thích tác giả A, bạn cũng sẽ thích các sách khác của tác giả A".
+
+\textbf{Luồng thực thi Pig:}
+\begin{enumerate}
+    \item \textbf{Tải và Tách (Load \& Split):} Tải ma trận đặc \texttt{UI} và file \texttt{books.csv} (để lấy tên tác giả). Dữ liệu sách được làm sạch (bỏ dấu \texttt{"}) bằng hàm \texttt{REPLACE}. Tách \texttt{UI} thành \texttt{NonZero} và \texttt{Zero}.
+    \item \textbf{Chuẩn hóa (Normalization):} Chuẩn hóa rating bằng cách trừ đi rating trung bình của *từng user* (User-based normalization), để loại bỏ thiên kiến (bias) của người dùng (ví dụ: user khó tính/dễ tính).
+    \item \textbf{Xây dựng Hồ sơ User (User Profile):}
+        \begin{itemize}
+            \item Script \texttt{JOIN} rating đã chuẩn hóa (\texttt{NormRatings}) với bảng \texttt{Books\_Cleaned} để lấy \texttt{author}.
+            \item Nó \texttt{GROUP BY (uid, author)} và tính \texttt{AVG} (trung bình) để tìm ra "điểm yêu thích" của user cho từng tác giả. Ví dụ: (User 276727, 'Frank Herbert', 1.5).
+        \end{itemize}
+    \item \textbf{Dự đoán (Prediction):}
+        \begin{itemize}
+            \item Script lấy các sách \texttt{Zero} (user chưa xem) và \texttt{JOIN} với bảng \texttt{Books\_Cleaned} để tìm tác giả của chúng.
+            \item Nó \texttt{JOIN} một lần nữa với \texttt{UserProfile} (Hồ sơ User) theo \texttt{(uid, author)}.
+            \item Điểm \texttt{author\_score} (độ yêu thích tác giả) được dùng trực tiếp làm điểm \texttt{PredictedRating}.
+        \end{itemize}
+    \item \textbf{Gợi ý và Lưu trữ (Recommend \& Store):} Sắp xếp, \texttt{LIMIT 5}, và lưu kết quả vào \texttt{/RcomSys/ContentOut}.
+\end{enumerate}
+
+\subsubsection{Lọc Lai (Hybrid)}
+Script \texttt{Hybrid.pig} kết hợp điểm mạnh của mô hình Baseline và Lọc Cộng tác Item-Item. Đây là mô hình phức tạp và thường cho kết quả tốt nhất.
+
+\textbf{Luồng thực thi Pig:}
+\begin{enumerate}
+    \item \textbf{Tính Baseline (Dự đoán cơ sở):} Script tính toán 3 giá trị: $\mu$ (rating trung bình toàn hệ thống), $b_u$ (thiên kiến của mỗi user), và $b_i$ (thiên kiến của mỗi item). Kết quả là một bảng \texttt{A\_9(uid, itemid, b)} chứa điểm baseline cho mọi cặp (user, item).
+    \item \textbf{Tính ma trận Tương đồng (Similarity Matrix):} Bước này thực thi y hệt như trong script \texttt{Collaborative.pig}.
+    \item \textbf{Dự đoán (Prediction):}
+        \begin{itemize}
+            \item Script tính toán "phần dư" (residual) bằng cách lấy \texttt{rating} thật trừ đi \texttt{baseline} của hàng xóm (\texttt{rating - b\_sim\_item}).
+            \item Nó tính Trung bình có trọng số (Weighted Average) trên "phần dư" này để ra giá trị \texttt{prePR}.
+            \item \textbf{Công thức cuối cùng:} \texttt{PredictedRating = b + prePR} (Baseline của sách cần dự đoán + Trung bình trọng số của phần dư).
+        \end{itemize}
+    \item \textbf{Gợi ý và Lưu trữ (Recommend \& Store):} Sắp xếp, \texttt{LIMIT 5}, và lưu kết quả vào \texttt{/RcomSys/HybridOut}.
+\end{enumerate}
+
+\subsubsection{Lệnh thực thi Pig}
+Các script Pig được chạy tuần tự trên terminal của master node.
+\begin{verbatim}
+# Xóa các output cũ (nếu có)
+hadoop fs -rm -r /RcomSys/CollabOut
+hadoop fs -rm -r /RcomSys/ContentOut
+hadoop fs -rm -r /RcomSys/HybridOut
+
+# Chạy các script Pig
+pig -f pigScripts/Collaborative.pig
+pig -f pigScripts/ContentBased.pig
+pig -f pigScripts/Hybrid.pig
+\end{verbatim}
+
+\subsection{Bước 3 \& 4: Lớp BI (Apache Hive)}
+\label{sec:thuc_thi_hive}
+Đây là bước cuối cùng, biến các file text (kết quả của Pig) thành các bảng có cấu trúc để truy vấn, đúng theo tinh thần của một hệ thống Business Intelligence.
+
+\subsubsection{Script Khởi tạo Bảng (Schema-on-Read)}
+Chúng ta chạy \texttt{hiveScript.sql} một lần duy nhất để "đăng ký" các file dữ liệu trên HDFS với catalog của Hive.
+
+\textbf{Luồng thực thi Hive:}
+\begin{enumerate}
+    \item Tạo một database mới tên là \texttt{recomsys\_book}.
+    \item \textbf{Tạo bảng \texttt{user\_book\_matrix}:} Đây là bảng \texttt{EXTERNAL TABLE} trỏ đến output của MapReduce. Hive không di chuyển hay copy dữ liệu, nó chỉ "áp" schema (lược đồ) lên file text có sẵn.
+    \item \textbf{Tạo bảng \texttt{books\_raw} và \texttt{VIEW books}:} Tạo một bảng \texttt{EXTERNAL TABLE} tên \texttt{books\_raw} trỏ đến file \texttt{books.csv} gốc. Sau đó, tạo một \texttt{VIEW} tên \texttt{books} từ \texttt{books\_raw} để tự động làm sạch (bằng hàm \texttt{regexp\_replace}) các dấu \texttt{"} khỏi \texttt{ISBN}, \texttt{title}, \texttt{author} mỗi khi truy vấn.
+    \item \textbf{Tạo 3 Bảng Kết quả:} Tạo 3 bảng external (\texttt{collab\_out}, \texttt{content\_out}, \texttt{hybrid\_out}) trỏ đến 3 thư mục kết quả của Pig.
+\end{enumerate}
+\textbf{Lệnh thực thi}
+\begin{verbatim}
+hive -f hiveScripts/hiveScript.sql
+\end{verbatim}
+
+\subsubsection{Script Truy vấn (Query)}
+Script \texttt{hiveExec.sql} được dùng để tạo ra các \texttt{VIEW} (Khung nhìn) tổng hợp, giúp cho việc truy vấn cuối cùng trở nên đơn giản.
+
+\textbf{Luồng thực thi Hive:}
+\begin{enumerate}
+    \item Script này tạo ra 3 \texttt{VIEW} chi tiết (\texttt{collab\_detail}, \texttt{content\_detail}, \texttt{hybrid\_detail}). Mỗi View này thực hiện phép \texttt{JOIN} giữa bảng kết quả (ví dụ: \texttt{collab\_out}) với View \texttt{books} (đã làm sạch) để lấy thông tin \texttt{title}, \texttt{author}, \texttt{year}.
+    \item Tiếp theo, script tạo 3 \texttt{VIEW} cuối cùng (\texttt{collab\_final}, \texttt{content\_final}, \texttt{hybrid\_final}). Các View này sử dụng hàm cửa sổ (window function) \texttt{ROW\_NUMBER() OVER (...)} để lọc và chỉ giữ lại TOP 5 gợi ý cho mỗi user.
+    \item \textbf{Bản chất (Behind the Scene):} Các View này không chạy ngay. Chúng là các "câu lệnh ảo" được lưu lại. Khi người dùng thực sự chạy một lệnh \texttt{SELECT} trên các View này, Hive mới "thực thi" chúng, dịch chúng thành một chuỗi tác vụ MapReduce/Tez tối ưu để trả về kết quả cuối cùng.
+\end{enumerate}
+\textbf{Lệnh thực thi}
+\begin{verbatim}
+# Chạy 1 lần để tạo các VIEWs
+hive -f hiveScripts/hiveExec.sql
+
+# Người dùng cuối (hoặc ứng dụng) sẽ chạy lệnh SQL đơn giản này:
+hive -e "USE recomsys_book; SELECT * FROM hybrid_final WHERE uid = 276727;"
+\end{verbatim}
